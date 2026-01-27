@@ -10,10 +10,16 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import ARIMA fitting function
+from models.arima import fit_arima
+
+
+# Import GARCH fitting function
+from models.garch import fit_garch
 
 class StockForecaster:
     """
-    Unified forecasting engine that provides clear, actionable predictions
+    Forecasting engine for stock prices
     """
     
     def __init__(self, prices, dates=None):
@@ -35,6 +41,25 @@ class StockForecaster:
             self.dates = None
         
         self.returns = self.prices.pct_change().dropna()
+        
+    def run_garch_forecast(self, days=30):
+        """
+        Run GARCH model for volatility forecasting
+        """
+        try:
+            # Fit GARCH(1,1)
+            result = fit_garch(self.prices, p=1, q=1, forecast_horizon=days)
+            return result
+        except Exception as e:
+            # Fallback
+            hist_vol = float(self.returns.std() * np.sqrt(252))
+            return {
+                'error': str(e),
+                'model_type': 'Historical Volatility',
+                'current_vol': hist_vol,
+                'forecast_volatility': [hist_vol] * days,
+                'vix_style_vol': hist_vol * 100
+            }
         
     def analyze_trends(self):
         """
@@ -333,16 +358,174 @@ class StockForecaster:
             'max_gain': float(returns_pct.max()),
             'max_loss': float(returns_pct.min()),
         }
+    
+    def run_monte_carlo(self, days=30, n_simulations=1000):
+        """
+        Monte Carlo simulation for price path prediction
+        Uses Geometric Brownian Motion (GBM): dS = μS*dt + σS*dW
+        
+        Returns simulated price paths and probability distribution
+        """
+        if len(self.returns) < 20:
+            return None
+        
+        # Parameters from historical data
+        mu = self.returns.mean()  # Daily drift
+        sigma = self.returns.std()  # Daily volatility
+        current_price = float(self.prices.iloc[-1])
+        
+        # Simulate paths
+        np.random.seed(42)  # Reproducibility
+        dt = 1  # Daily steps
+        
+        # Generate random walks
+        random_shocks = np.random.normal(0, 1, (n_simulations, days))
+        
+        # GBM formula: S(t+dt) = S(t) * exp((μ - σ²/2)*dt + σ*√dt*Z)
+        daily_returns = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * random_shocks
+        
+        # Cumulative returns
+        price_paths = np.zeros((n_simulations, days + 1))
+        price_paths[:, 0] = current_price
+        
+        for t in range(1, days + 1):
+            price_paths[:, t] = price_paths[:, t-1] * np.exp(daily_returns[:, t-1])
+        
+        # Final prices (end of forecast period)
+        final_prices = price_paths[:, -1]
+        
+        # Statistics
+        mean_final = float(np.mean(final_prices))
+        median_final = float(np.median(final_prices))
+        std_final = float(np.std(final_prices))
+        
+        # Percentiles for confidence intervals
+        p5 = float(np.percentile(final_prices, 5))
+        p25 = float(np.percentile(final_prices, 25))
+        p75 = float(np.percentile(final_prices, 75))
+        p95 = float(np.percentile(final_prices, 95))
+        
+        # Probability of profit
+        prob_profit = float(np.mean(final_prices > current_price) * 100)
+        
+        # Expected return
+        expected_return = (mean_final / current_price - 1) * 100
+        
+        # Sample paths for visualization (5 representative paths)
+        sample_indices = [0, n_simulations//4, n_simulations//2, 3*n_simulations//4, n_simulations-1]
+        sample_paths = [price_paths[i, :].tolist() for i in sample_indices]
+        
+        return {
+            'n_simulations': n_simulations,
+            'forecast_days': days,
+            'current_price': current_price,
+            'mean_final_price': mean_final,
+            'median_final_price': median_final,
+            'std_final_price': std_final,
+            'percentile_5': p5,
+            'percentile_25': p25,
+            'percentile_75': p75,
+            'percentile_95': p95,
+            'probability_of_profit': prob_profit,
+            'expected_return_pct': expected_return,
+            'sample_paths': sample_paths,
+            'model': 'Geometric Brownian Motion',
+            'parameters': {
+                'daily_drift': float(mu * 100),
+                'daily_volatility': float(sigma * 100),
+            }
+        }
+    
+    def run_arima_forecast(self, days=30):
+        """
+        Run ARIMA model for statistical price forecasting
+        Uses fixed order (1,1,1) for speed - auto-selection is too slow
+        """
+        try:
+            # Use fixed order for speed (grid search is too slow)
+            result = fit_arima(self.prices, order=(1, 1, 1), forecast_days=days)
+            
+            # Add additional context
+            current_price = float(self.prices.iloc[-1])
+            final_forecast = result['forecast_prices'][-1] if result['forecast_prices'] else current_price
+            
+            result['expected_return_pct'] = (final_forecast / current_price - 1) * 100
+            result['model'] = f"ARIMA{result['order']}"
+            
+            return result
+        except Exception as e:
+            # Fallback if ARIMA fails - use momentum
+            avg_return = float(self.returns.mean() * days * 100)
+            return {
+                'error': str(e),
+                'model': 'ARIMA (fallback)',
+                'forecast_prices': [],
+                'expected_return_pct': avg_return
+            }
 
 
 def forecast_stock(prices, dates=None, forecast_days=30):
     """
     Main function to get complete forecast for a stock
+    
+    Uses ensemble of 3 models:
+    1. Statistical/Momentum model
+    2. ARIMA time series model
+    3. Monte Carlo simulation
     """
     forecaster = StockForecaster(prices, dates)
     
+    # Base recommendation (momentum + trends)
     result = forecaster.generate_recommendation(forecast_days)
     result['chart_data'] = forecaster.get_price_history_chart_data()
     result['returns_distribution'] = forecaster.get_returns_distribution()
     
+    # ARIMA forecast
+    arima_result = forecaster.run_arima_forecast(forecast_days)
+    result['arima'] = arima_result
+    
+    # Monte Carlo simulation
+    monte_carlo_result = forecaster.run_monte_carlo(forecast_days)
+    result['monte_carlo'] = monte_carlo_result
+    
+    # GARCH Volatility forecast
+    garch_result = forecaster.run_garch_forecast(forecast_days)
+    result['garch'] = garch_result
+    
+    # Ensemble prediction (weighted average)
+    momentum_return = result['forecast']['expected_return_pct']
+    arima_return = arima_result.get('expected_return_pct', momentum_return)
+    mc_return = monte_carlo_result['expected_return_pct'] if monte_carlo_result else momentum_return
+    
+    # Weighted ensemble: 40% Momentum, 30% ARIMA, 30% Monte Carlo
+    ensemble_return = 0.4 * momentum_return + 0.3 * arima_return + 0.3 * mc_return
+    
+    # Update the main forecast with ensemble
+    result['ensemble'] = {
+        'expected_return_pct': float(ensemble_return),
+        'momentum_weight': 0.4,
+        'arima_weight': 0.3,
+        'monte_carlo_weight': 0.3,
+        'component_returns': {
+            'momentum': float(momentum_return),
+            'arima': float(arima_return),
+            'monte_carlo': float(mc_return)
+        }
+    }
+    
+    # Override main forecast return with ensemble
+    result['forecast']['expected_return_pct'] = float(ensemble_return)
+    
+    # Update confidence based on model agreement
+    returns_list = [momentum_return, arima_return, mc_return]
+    direction_agreement = sum(1 for r in returns_list if r > 0) if ensemble_return > 0 else sum(1 for r in returns_list if r < 0)
+    
+    # Boost confidence if all models agree
+    if direction_agreement == 3:
+        result['forecast']['confidence_score'] = min(100, result['forecast']['confidence_score'] + 15)
+        result['ensemble']['models_agree'] = True
+    else:
+        result['ensemble']['models_agree'] = False
+    
     return result
+

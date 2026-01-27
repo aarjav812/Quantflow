@@ -213,6 +213,120 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Advanced Models Row -->
+                <div class="models-row">
+                    <!-- ARIMA Card -->
+                    <div class="model-card arima">
+                        <div class="model-header">
+                            <span class="model-badge">ARIMA</span>
+                            <span class="model-name" id="arimaModel">ARIMA(1,1,1)</span>
+                        </div>
+                        <div class="model-prediction">
+                            <span class="model-label">Predicted Return</span>
+                            <span class="model-value" id="arimaReturn">+1.5%</span>
+                        </div>
+                        <div class="model-details">
+                            <div class="detail-row">
+                                <span>AIC Score</span>
+                                <span id="arimaAIC">-2,456</span>
+                            </div>
+                            <div class="detail-row">
+                                <span>Target Price</span>
+                                <span id="arimaTarget">₹2,520</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monte Carlo Card -->
+                    <div class="model-card montecarlo">
+                        <div class="model-header">
+                            <span class="model-badge">Monte Carlo</span>
+                            <span class="model-name">1,000 Simulations</span>
+                        </div>
+                        <div class="model-prediction">
+                            <span class="model-label">Profit Probability</span>
+                            <span class="model-value probability" id="mcProbability">55%</span>
+                        </div>
+                        <div class="mc-range">
+                            <div class="range-bar">
+                                <div class="range-fill" id="mcRangeFill"></div>
+                                <div class="range-marker" id="mcMarker"></div>
+                            </div>
+                            <div class="range-labels">
+                                <span id="mcLow">₹1,200</span>
+                                <span id="mcHigh">₹1,600</span>
+                            </div>
+                        </div>
+                        <div class="model-details">
+                            <div class="detail-row">
+                                <span>Expected Return</span>
+                                <span id="mcReturn">+1.4%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GARCH Volatility Card -->
+                    <div class="model-card garch">
+                        <div class="model-header">
+                            <span class="model-badge">GARCH</span>
+                            <span class="model-name" id="garchModel">GARCH(1,1)</span>
+                        </div>
+                        <div class="model-prediction">
+                            <span class="model-label">Current Volatility</span>
+                            <span class="model-value vol" id="garchVol">24.5%</span>
+                        </div>
+                        <div class="vol-meter">
+                            <div class="vol-scale">
+                                <span class="vol-low">Low</span>
+                                <span class="vol-high">High</span>
+                            </div>
+                            <div class="vol-bar">
+                                <div class="vol-fill" id="volFill"></div>
+                            </div>
+                        </div>
+                        <div class="model-details">
+                            <div class="detail-row">
+                                <span>VIX-Style</span>
+                                <span id="garchVix">18.2</span>
+                            </div>
+                            <div class="detail-row">
+                                <span>Persistence</span>
+                                <span id="garchPersist">0.95</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ensemble Agreement Card -->
+                    <div class="model-card ensemble">
+                        <div class="model-header">
+                            <span class="model-badge">Ensemble</span>
+                            <span class="model-name">3 Models Combined</span>
+                        </div>
+                        <div class="ensemble-visual">
+                            <div class="ensemble-bar">
+                                <div class="e-segment momentum" style="width: 40%">
+                                    <span>40%</span>
+                                </div>
+                                <div class="e-segment arima" style="width: 30%">
+                                    <span>30%</span>
+                                </div>
+                                <div class="e-segment mc" style="width: 30%">
+                                    <span>30%</span>
+                                </div>
+                            </div>
+                            <div class="ensemble-legend">
+                                <span class="e-label momentum">Momentum</span>
+                                <span class="e-label arima">ARIMA</span>
+                                <span class="e-label mc">Monte Carlo</span>
+                            </div>
+                        </div>
+                        <div class="ensemble-agreement" id="ensembleAgreement">
+                            <span class="agree-icon">✓</span>
+                            <span>All models agree</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
 

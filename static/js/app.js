@@ -275,6 +275,78 @@ function updateUI(data, symbol, days) {
     
     // Update price chart
     updatePriceChart(chartData);
+    
+    // Update Advanced Models
+    updateAdvancedModels(data);
+}
+
+function updateAdvancedModels(data) {
+    const arima = data.arima || {};
+    const mc = data.monte_carlo || {};
+    const garch = data.garch || {};
+    const ensemble = data.ensemble || {};
+    
+    // 1. ARIMA
+    document.getElementById('arimaModel').textContent = arima.model || 'ARIMA(1,1,1)';
+    const arimaRet = arima.expected_return_pct || 0;
+    const arimaEl = document.getElementById('arimaReturn');
+    arimaEl.textContent = `${arimaRet >= 0 ? '+' : ''}${arimaRet.toFixed(1)}%`;
+    arimaEl.className = `model-value ${arimaRet >= 0 ? 'positive' : 'negative'}`;
+    
+    document.getElementById('arimaAIC').textContent = arima.aic ? Math.round(arima.aic).toLocaleString() : 'N/A';
+    
+    const arimaTarget = arima.forecast_prices && arima.forecast_prices.length > 0 
+        ? arima.forecast_prices[arima.forecast_prices.length - 1] 
+        : (data.trends.current_price * (1 + arimaRet/100));
+    document.getElementById('arimaTarget').textContent = `₹${arimaTarget.toFixed(2)}`;
+    
+    // 2. Monte Carlo
+    document.getElementById('mcProbability').textContent = `${Math.round(mc.probability_of_profit || 50)}%`;
+    const mcRet = mc.expected_return_pct || 0;
+    document.getElementById('mcReturn').textContent = `${mcRet >= 0 ? '+' : ''}${mcRet.toFixed(1)}%`;
+    
+    const p5 = mc.percentile_5 || (data.trends.current_price * 0.9);
+    const p95 = mc.percentile_95 || (data.trends.current_price * 1.1);
+    const current = data.trends.current_price || 1000;
+    
+    document.getElementById('mcLow').textContent = `₹${Math.round(p5).toLocaleString()}`;
+    document.getElementById('mcHigh').textContent = `₹${Math.round(p95).toLocaleString()}`;
+    
+    // Calculate position of current price in the range (for the marker)
+    const range = p95 - p5;
+    const position = range > 0 ? ((current - p5) / range) * 100 : 50;
+    document.getElementById('mcMarker').style.left = `${Math.min(100, Math.max(0, position))}%`;
+    
+    // 3. GARCH
+    const vol = garch.current_vol || 20;
+    document.getElementById('garchModel').textContent = garch.model_type || 'GARCH(1,1)';
+    document.getElementById('garchVol').textContent = `${vol.toFixed(1)}%`;
+    document.getElementById('garchVix').textContent = garch.vix_style_vol?.toFixed(1) || 'N/A';
+    document.getElementById('garchPersist').textContent = garch.persistence ? garch.persistence.toFixed(2) : '0.95';
+    
+    // Update Vol Meter (0-60% scale)
+    const volFill = Math.min(100, (vol / 60) * 100);
+    document.getElementById('volFill').style.width = `${volFill}%`;
+    
+    // 4. Ensemble
+    const components = ensemble.component_returns || {};
+    const sumAbs = Math.abs(components.momentum || 0) + Math.abs(components.arima || 0) + Math.abs(components.monte_carlo || 0);
+    
+    // Note: Weights are fixed 40/30/30 in backend logic, but we can visualize return contribution if we want.
+    // Here we stick to visualizing the fixed weights as defined in CSS logic
+    
+    const agree = ensemble.models_agree;
+    const agreeEl = document.getElementById('ensembleAgreement');
+    if (agree) {
+        agreeEl.innerHTML = '<span class="agree-icon">✓</span><span>All models agree</span>';
+        agreeEl.className = 'ensemble-agreement';
+        agreeEl.style.color = 'var(--green)';
+        agreeEl.style.background = 'rgba(34, 197, 94, 0.1)';
+    } else {
+        agreeEl.innerHTML = '<span class="agree-icon">!</span><span>Mixed signals</span>';
+        agreeEl.style.color = 'var(--yellow)';
+        agreeEl.style.background = 'rgba(251, 191, 36, 0.1)';
+    }
 }
 
 // ============================================
