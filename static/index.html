@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForeQuant | AI-Powered Stock Forecasts</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <!-- Animated Background -->
+    <div class="bg-gradient"></div>
+    <div class="grid-overlay"></div>
+
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+                        <circle cx="18" cy="18" r="18" fill="url(#grad1)" />
+                        <path d="M10 24L16 14L20 18L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <circle cx="26" cy="10" r="3" fill="white" />
+                        <defs>
+                            <linearGradient id="grad1" x1="0" y1="0" x2="36" y2="36">
+                                <stop offset="0%" stop-color="#6366f1" />
+                                <stop offset="100%" stop-color="#8b5cf6" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">ForeQuant</span>
+                    <span class="brand-tag">AI-Powered Forecasts</span>
+                </div>
+            </div>
+
+            <!-- Stock Search -->
+            <div class="search-container">
+                <div class="search-box">
+                    <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="M21 21l-4.35-4.35" />
+                    </svg>
+                    <input type="text" id="stockSearch" placeholder="Search stocks (e.g., RELIANCE, TCS, INFY...)"
+                        autocomplete="off">
+                    <div class="search-dropdown" id="searchDropdown"></div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <select id="forecastDays" class="period-select">
+                    <option value="7">7 Days</option>
+                    <option value="14">14 Days</option>
+                    <option value="30" selected>30 Days</option>
+                    <option value="60">60 Days</option>
+                    <option value="90">90 Days</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Welcome Screen (shown initially) -->
+            <div class="welcome-screen" id="welcomeScreen">
+                <div class="welcome-content">
+                    <div class="welcome-icon">📈</div>
+                    <h1>Predict Stock Returns</h1>
+                    <p>Select a stock to see AI-powered forecasts based on historical trends and seasonal patterns</p>
+
+                    <div class="quick-picks">
+                        <span class="quick-label">Quick picks:</span>
+                        <button class="quick-btn" onclick="selectStock('RELIANCE')">RELIANCE</button>
+                        <button class="quick-btn" onclick="selectStock('TCS')">TCS</button>
+                        <button class="quick-btn" onclick="selectStock('HDFCBANK')">HDFC BANK</button>
+                        <button class="quick-btn" onclick="selectStock('INFY')">INFOSYS</button>
+                        <button class="quick-btn" onclick="selectStock('ICICIBANK')">ICICI</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Forecast Dashboard (shown after stock selection) -->
+            <div class="dashboard" id="dashboard" style="display: none;">
+                <!-- Top Row: Main Forecast Card -->
+                <div class="forecast-hero">
+                    <div class="stock-info">
+                        <h1 class="stock-symbol" id="stockSymbol">RELIANCE</h1>
+                        <div class="stock-price-row">
+                            <span class="current-price" id="currentPrice">₹2,456.80</span>
+                            <span class="price-change positive" id="priceChange">+2.34% today</span>
+                        </div>
+                    </div>
+
+                    <!-- THE BIG FORECAST -->
+                    <div class="main-forecast">
+                        <div class="forecast-label">PREDICTED RETURN IN <span id="forecastPeriod">30</span> DAYS</div>
+                        <div class="forecast-value" id="expectedReturn">+5.2%</div>
+                        <div class="forecast-range">
+                            <span>Range: </span>
+                            <span id="forecastRange">+2.1% to +8.3%</span>
+                        </div>
+                        <div class="target-price">
+                            Target: <span id="targetPrice">₹2,584.50</span>
+                        </div>
+                    </div>
+
+                    <!-- Recommendation Card -->
+                    <div class="recommendation-card" id="recommendationCard">
+                        <div class="rec-badge" id="recBadge">BUY</div>
+                        <div class="rec-action" id="recAction">Good entry point for investors</div>
+                        <div class="confidence-meter">
+                            <span>Confidence</span>
+                            <div class="meter-bar">
+                                <div class="meter-fill" id="confidenceFill" style="width: 72%"></div>
+                            </div>
+                            <span class="confidence-value" id="confidenceValue">72%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="charts-row">
+                    <!-- Price Chart -->
+                    <div class="chart-card large">
+                        <div class="card-header">
+                            <h3>Price History & Trend</h3>
+                            <div class="chart-legend">
+                                <span class="legend-item"><span class="dot price"></span>Price</span>
+                                <span class="legend-item"><span class="dot ma20"></span>20-Day MA</span>
+                                <span class="legend-item"><span class="dot ma50"></span>50-Day MA</span>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="priceChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Signals Card -->
+                    <div class="signals-card">
+                        <h3>Why This Recommendation</h3>
+                        <div class="signals-list" id="signalsList">
+                            <div class="signal-item bullish">
+                                <span class="signal-icon">↑</span>
+                                <span>Price above 20-day MA</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Row: Stats & Seasonality -->
+                <div class="bottom-row">
+                    <!-- Key Metrics -->
+                    <div class="metrics-card">
+                        <h3>Key Indicators</h3>
+                        <div class="metrics-grid">
+                            <div class="metric">
+                                <span class="metric-label">10-Day Momentum</span>
+                                <span class="metric-value positive" id="momentum10">+3.2%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">30-Day Momentum</span>
+                                <span class="metric-value positive" id="momentum30">+5.8%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Annual Return</span>
+                                <span class="metric-value" id="annualReturn">18.5%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Volatility</span>
+                                <span class="metric-value" id="volatility">24.3%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Win Rate</span>
+                                <span class="metric-value" id="winRate">52%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Trend</span>
+                                <span class="metric-value positive" id="trendDir">UPWARD</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Seasonality -->
+                    <div class="seasonality-card">
+                        <h3>Seasonal Patterns</h3>
+                        <div class="season-highlight">
+                            <div class="season-item best">
+                                <span class="season-label">Best Month</span>
+                                <span class="season-month" id="bestMonth">November</span>
+                                <span class="season-return positive" id="bestReturn">+4.2%</span>
+                            </div>
+                            <div class="season-item worst">
+                                <span class="season-label">Worst Month</span>
+                                <span class="season-month" id="worstMonth">March</span>
+                                <span class="season-return negative" id="worstReturn">-2.1%</span>
+                            </div>
+                            <div class="season-item current">
+                                <span class="season-label">Current Month</span>
+                                <span class="season-month" id="currentMonth">January</span>
+                                <span class="season-return" id="currentMonthReturn">+1.5%</span>
+                            </div>
+                        </div>
+                        <div class="month-chart-wrapper">
+                            <canvas id="monthChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Forecasts are based on historical patterns and are not financial advice. Past performance does not
+                guarantee future results.</p>
+        </footer>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <span>Analyzing patterns...</span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>

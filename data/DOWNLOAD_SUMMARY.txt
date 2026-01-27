@@ -1,0 +1,60 @@
+Nifty 50 Data Download Summary
+================================================================================
+Date: 2026-01-27 00:19:25
+Period: 5y
+Total stocks: 50
+Successful: 49
+Failed: 1
+================================================================================
+
+Stocks:
+  - RELIANCE
+  - TCS
+  - HDFCBANK
+  - INFY
+  - ICICIBANK
+  - HINDUNILVR
+  - ITC
+  - SBIN
+  - BHARTIARTL
+  - KOTAKBANK
+  - LT
+  - AXISBANK
+  - ASIANPAINT
+  - MARUTI
+  - SUNPHARMA
+  - TITAN
+  - ULTRACEMCO
+  - BAJFINANCE
+  - NESTLEIND
+  - HCLTECH
+  - WIPRO
+  - ONGC
+  - NTPC
+  - POWERGRID
+  - M&M
+  - TATAMOTORS
+  - TATASTEEL
+  - ADANIPORTS
+  - JSWSTEEL
+  - INDUSINDBK
+  - HINDALCO
+  - COALINDIA
+  - GRASIM
+  - TECHM
+  - BAJAJFINSV
+  - DRREDDY
+  - EICHERMOT
+  - HEROMOTOCO
+  - CIPLA
+  - TATACONSUM
+  - BRITANNIA
+  - DIVISLAB
+  - SHREECEM
+  - APOLLOHOSP
+  - BPCL
+  - ADANIENT
+  - BAJAJ-AUTO
+  - HDFCLIFE
+  - SBILIFE
+  - LTIM

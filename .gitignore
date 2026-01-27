@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local development
+.env
+.env.local
+
+# Test files
+test_*.py
+
+# Temporary files
+*.tmp
+*.temp
+
+# Coverage
+.coverage
+htmlcov/
+
+# Large training data files (not needed for app)
+data/enhanced_training_data_5y.csv
+data/training_data_nifty50.csv
+
+# Data preparation scripts (not needed for app)
+data/build_event_reactions.py
+data/compute_indicators.py
+data/enrich_events_with_technicals.py
+data/label_events.py
+data/prepare_training_data.py
+
+# Analysis files (can be regenerated)
+data/contrarian_analysis.csv
+data/earnings_catalyst_analysis.csv
+data/smart_money_signals.csv
+data/nifty50_rankings.csv
+data/unified_intelligence_results.json
+data/analysis_summary.json
+data/intelligence.json
