@@ -14,11 +14,30 @@ warnings.filterwarnings('ignore')
 # Import forecaster
 from models.forecaster import StockForecaster, forecast_stock
 
+
+# Custom JSON encoder to handle NumPy types
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        if isinstance(obj, (np.floating, np.float64, np.float32)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if pd.isna(obj):
+            return None
+        return super().default(obj)
+
+
 app = Flask(__name__, static_folder='static')
+app.json_encoder = NumpyEncoder
 CORS(app)
 
+
 # Data directory
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
 
 # Cache for loaded data
 _stock_data_cache = {}
@@ -29,6 +48,8 @@ def load_stock_data(symbol):
     """Load stock OHLCV data from CSV"""
     if symbol in _stock_data_cache:
         return _stock_data_cache[symbol]
+    
+    print(f"Loading data for symbol: {symbol}")
     
     # Try different file patterns
     file_patterns = [
@@ -42,12 +63,18 @@ def load_stock_data(symbol):
     for pattern in file_patterns:
         filepath = os.path.join(DATA_DIR, pattern)
         if os.path.exists(filepath):
-            df = pd.read_csv(filepath)
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'])
-            _stock_data_cache[symbol] = df
-            return df
+            print(f"Found file: {filepath}")
+            try:
+                df = pd.read_csv(filepath)
+                if 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'], utc=True).dt.tz_localize(None)
+                _stock_data_cache[symbol] = df
+                return df
+            except Exception as e:
+                print(f"Error reading CSV {filepath}: {e}")
+                continue
     
+    print(f"No file found for {symbol} in {DATA_DIR}")
     return None
 
 
@@ -59,9 +86,14 @@ def load_fundamentals():
     
     filepath = os.path.join(DATA_DIR, 'nifty50_fundamentals.csv')
     if os.path.exists(filepath):
-        _fundamentals_cache = pd.read_csv(filepath)
-        return _fundamentals_cache
+        try:
+            _fundamentals_cache = pd.read_csv(filepath)
+            return _fundamentals_cache
+        except Exception as e:
+            print(f"Error loading fundamentals: {e}")
+            return None
     return None
+
 
 
 # ============== API Routes ==============
@@ -136,6 +168,23 @@ def get_forecast(symbol):
     
     forecast_days = request.args.get('days', 30, type=int)
     
+    def convert_np(obj):
+        import numpy as np
+        import pandas as pd
+        if isinstance(obj, np.generic):
+            return obj.item()
+        elif isinstance(obj, dict):
+            return {k: convert_np(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_np(i) for i in obj]
+        elif isinstance(obj, tuple):
+            return tuple(convert_np(i) for i in obj)
+        elif isinstance(obj, set):
+            return {convert_np(i) for i in obj}
+        elif pd.isna(obj):
+            return None
+        else:
+            return obj
     try:
         # Get prices and dates
         prices = df['Close'].dropna()
@@ -144,7 +193,7 @@ def get_forecast(symbol):
         # Run the forecaster
         result = forecast_stock(prices, dates, forecast_days)
         
-        return jsonify(result)
+        return jsonify(convert_np(result))
         
     except Exception as e:
         import traceback

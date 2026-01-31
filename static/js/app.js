@@ -45,7 +45,8 @@ async function apiCall(endpoint, options = {}) {
         });
         
         if (!response.ok) {
-            throw new Error(`API Error: ${response.status}`);
+            const errorText = await response.text();
+            throw new Error(`API Error: ${response.status} - ${errorText}`);
         }
         
         return await response.json();
@@ -62,6 +63,7 @@ async function loadStocks() {
     try {
         const data = await apiCall('/api/stocks');
         stocksData = data.stocks || [];
+        console.log(`Loaded ${stocksData.length} stocks`);
     } catch (error) {
         console.error('Failed to load stocks:', error);
         // Use fallback data
@@ -125,11 +127,16 @@ function initializeSearch() {
 // Stock Selection
 // ============================================
 async function selectStock(symbol) {
+    if (!symbol) return;
+    console.log(`Selecting stock: ${symbol}`);
     selectedStock = symbol;
     
     // Update search input
-    document.getElementById('stockSearch').value = symbol;
-    document.getElementById('searchDropdown').classList.remove('active');
+    const searchInput = document.getElementById('stockSearch');
+    if (searchInput) searchInput.value = symbol;
+    
+    const dropdown = document.getElementById('searchDropdown');
+    if (dropdown) dropdown.classList.remove('active');
     
     // Show loading
     showLoading();
@@ -137,6 +144,9 @@ async function selectStock(symbol) {
     // Hide welcome, show dashboard
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'flex';
+    
+    // Reset UI to indicate loading/new state (Optional: clear old values)
+    document.getElementById('stockSymbol').textContent = symbol + ' (Loading...)';
     
     // Load forecast
     await loadForecast(symbol);
@@ -151,11 +161,18 @@ async function loadForecast(symbol) {
     const days = parseInt(document.getElementById('forecastDays').value);
     
     try {
+        console.log(`Fetching forecast for ${symbol} (${days} days)...`);
         const data = await apiCall(`/api/forecast/${symbol}?days=${days}`);
+        console.log('Forecast data received:', data);
         updateUI(data, symbol, days);
     } catch (error) {
         console.error('Failed to load forecast:', error);
-        // Show error state
+        alert(`Failed to load forecast for ${symbol}. \nError: ${error.message}`);
+        // Go back to welcome screen if it was the first load
+        if (document.getElementById('stockSymbol').textContent.includes('Loading')) {
+             document.getElementById('dashboard').style.display = 'none';
+             document.getElementById('welcomeScreen').style.display = 'flex';
+        }
     }
 }
 
@@ -330,10 +347,7 @@ function updateAdvancedModels(data) {
     
     // 4. Ensemble
     const components = ensemble.component_returns || {};
-    const sumAbs = Math.abs(components.momentum || 0) + Math.abs(components.arima || 0) + Math.abs(components.monte_carlo || 0);
-    
-    // Note: Weights are fixed 40/30/30 in backend logic, but we can visualize return contribution if we want.
-    // Here we stick to visualizing the fixed weights as defined in CSS logic
+    // const sumAbs = Math.abs(components.momentum || 0) + Math.abs(components.arima || 0) + Math.abs(components.monte_carlo || 0);
     
     const agree = ensemble.models_agree;
     const agreeEl = document.getElementById('ensembleAgreement');

@@ -41,6 +41,59 @@ class StockForecaster:
             self.dates = None
         
         self.returns = self.prices.pct_change().dropna()
+        self.log_returns = np.log(self.prices / self.prices.shift(1)).dropna()
+    
+    def calculate_rsi(self, period=14):
+        """
+        Calculate Relative Strength Index (RSI)
+        RSI = 100 - (100 / (1 + RS))
+        where RS = avg gain / avg loss over period
+        """
+        if len(self.prices) < period + 1:
+            return 50.0  # Neutral default
+        
+        delta = self.prices.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = (-delta).where(delta < 0, 0.0)
+        
+        avg_gain = gain.rolling(window=period, min_periods=period).mean()
+        avg_loss = loss.rolling(window=period, min_periods=period).mean()
+        
+        rs = avg_gain / avg_loss.replace(0, np.inf)
+        rsi = 100 - (100 / (1 + rs))
+        
+        return float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 50.0
+    
+    def calculate_bollinger_position(self, period=20, std_dev=2):
+        """
+        Calculate where current price sits in Bollinger Bands
+        Returns: -1 (below lower), 0 (in band), +1 (above upper)
+        And percentage position within band
+        """
+        if len(self.prices) < period:
+            return 0, 50.0
+        
+        ma = self.prices.rolling(window=period).mean()
+        std = self.prices.rolling(window=period).std()
+        
+        upper = ma + (std * std_dev)
+        lower = ma - (std * std_dev)
+        
+        current = self.prices.iloc[-1]
+        upper_val = upper.iloc[-1]
+        lower_val = lower.iloc[-1]
+        
+        if current > upper_val:
+            return 1, 100.0
+        elif current < lower_val:
+            return -1, 0.0
+        else:
+            band_width = upper_val - lower_val
+            if band_width > 0:
+                position = (current - lower_val) / band_width * 100
+            else:
+                position = 50.0
+            return 0, float(position)
         
     def run_garch_forecast(self, days=30):
         """
@@ -98,6 +151,22 @@ class StockForecaster:
         else:
             momentum_30d = 0
         
+        # RSI (Relative Strength Index)
+        rsi = self.calculate_rsi(14)
+        rsi_signal = "OVERBOUGHT" if rsi > 70 else ("OVERSOLD" if rsi < 30 else "NEUTRAL")
+        
+        # Bollinger Band position
+        bb_position, bb_pct = self.calculate_bollinger_position(20, 2)
+        bb_signal = "ABOVE_UPPER" if bb_position > 0 else ("BELOW_LOWER" if bb_position < 0 else "IN_BAND")
+        
+        # Count bullish signals with new indicators
+        bullish_count = sum([
+            above_ma20, above_ma50, above_ma200,
+            momentum_10d > 0,
+            rsi < 70,  # Not overbought
+            bb_position != 1  # Not above upper band
+        ])
+        
         return {
             'current_price': float(current_price),
             'trend_direction': trend_direction,
@@ -110,7 +179,11 @@ class StockForecaster:
             'above_ma200': bool(above_ma200),
             'momentum_10d': float(momentum_10d),
             'momentum_30d': float(momentum_30d),
-            'bullish_signals': int(sum([above_ma20, above_ma50, above_ma200, momentum_10d > 0])),
+            'rsi': float(rsi),
+            'rsi_signal': rsi_signal,
+            'bollinger_position': bb_signal,
+            'bollinger_pct': float(bb_pct),
+            'bullish_signals': int(bullish_count),
         }
     
     def analyze_seasonality(self):
@@ -161,33 +234,38 @@ class StockForecaster:
         Forecast expected returns for the next N days
         
         Combines:
-        - Statistical trend projection
+        - Statistical trend projection (using log returns)
         - Historical average returns
         - Volatility-adjusted confidence intervals
         """
-        # Historical statistics
-        avg_daily_return = self.returns.mean()
-        daily_volatility = self.returns.std()
+        # Use log returns for more accurate multi-period projections
+        avg_daily_log_return = self.log_returns.mean()
+        daily_log_volatility = self.log_returns.std()
         
-        # Projected return over forecast period
-        expected_return = avg_daily_return * days
+        # Projected log return over forecast period
+        # For GBM: E[log(S_T/S_0)] = (mu - sigma^2/2) * T
+        drift_adjusted_return = (avg_daily_log_return - 0.5 * daily_log_volatility**2) * days
         
-        # Adjust based on recent momentum
-        if len(self.returns) >= 20:
-            recent_momentum = self.returns.iloc[-20:].mean()
-            momentum_adjustment = (recent_momentum - avg_daily_return) * 0.5  # 50% weight to recent
-            expected_return += momentum_adjustment * days
+        # Add momentum adjustment (but less aggressive)
+        if len(self.log_returns) >= 20:
+            recent_momentum = self.log_returns.iloc[-20:].mean()
+            momentum_diff = recent_momentum - avg_daily_log_return
+            # Weight recent momentum at 30% (less aggressive than before)
+            drift_adjusted_return += momentum_diff * days * 0.3
+        
+        # Convert log return to simple return for display
+        expected_return = np.exp(drift_adjusted_return) - 1
         
         # Confidence intervals (based on volatility)
-        period_volatility = daily_volatility * np.sqrt(days)
+        period_volatility = daily_log_volatility * np.sqrt(days)
         
         # 68% confidence (1 sigma)
-        lower_68 = expected_return - period_volatility
-        upper_68 = expected_return + period_volatility
+        lower_68 = np.exp(drift_adjusted_return - period_volatility) - 1
+        upper_68 = np.exp(drift_adjusted_return + period_volatility) - 1
         
         # 95% confidence (2 sigma)
-        lower_95 = expected_return - 2 * period_volatility
-        upper_95 = expected_return + 2 * period_volatility
+        lower_95 = np.exp(drift_adjusted_return - 2 * period_volatility) - 1
+        upper_95 = np.exp(drift_adjusted_return + 2 * period_volatility) - 1
         
         # Price targets
         current_price = self.prices.iloc[-1]
@@ -195,15 +273,32 @@ class StockForecaster:
         lower_target = current_price * (1 + lower_68)
         upper_target = current_price * (1 + upper_68)
         
-        # Confidence score (0-100)
-        # Higher if recent trend aligns with forecast
+        # Improved confidence score (0-100)
         trend_info = self.analyze_trends()
         signals = trend_info['bullish_signals']
+        rsi = trend_info.get('rsi', 50)
         
-        if expected_return > 0:
-            confidence = min(100, 50 + signals * 12.5)  # Max boost of 50
+        # Base confidence from signal agreement (max 6 signals now)
+        base_confidence = 40 + (signals / 6) * 30  # 40-70 range
+        
+        # Adjust for RSI extremes (reduce confidence at extremes)
+        if rsi > 80 or rsi < 20:
+            rsi_penalty = 10
+        elif rsi > 70 or rsi < 30:
+            rsi_penalty = 5
         else:
-            confidence = min(100, 50 + (4 - signals) * 12.5)
+            rsi_penalty = 0
+        
+        # Adjust for volatility (higher vol = lower confidence)
+        annualized_vol = daily_log_volatility * np.sqrt(252)
+        if annualized_vol > 0.4:  # >40% annual vol
+            vol_penalty = 10
+        elif annualized_vol > 0.3:
+            vol_penalty = 5
+        else:
+            vol_penalty = 0
+        
+        confidence = max(20, min(90, base_confidence - rsi_penalty - vol_penalty))
         
         return {
             'forecast_days': days,
@@ -217,89 +312,162 @@ class StockForecaster:
             'lower_target': float(lower_target),
             'upper_target': float(upper_target),
             'confidence_score': float(confidence),
-            'annualized_return': float(avg_daily_return * 252 * 100),
-            'annualized_volatility': float(daily_volatility * np.sqrt(252) * 100),
+            'annualized_return': float((np.exp(avg_daily_log_return * 252) - 1) * 100),
+            'annualized_volatility': float(daily_log_volatility * np.sqrt(252) * 100),
         }
     
     def generate_recommendation(self, forecast_days=30):
         """
-        Generate a clear BUY/HOLD/SELL recommendation
+        Generate a clear BUY/HOLD/SELL recommendation using quant-style scoring
         """
         trends = self.analyze_trends()
         forecast = self.forecast_returns(forecast_days)
         seasonality = self.analyze_seasonality()
-        
-        # Scoring system
-        score = 0
-        reasons = []
-        
-        # 1. Expected return direction and magnitude
-        exp_return = forecast['expected_return_pct']
-        if exp_return > 5:
-            score += 3
-            reasons.append(f"Strong upside potential: +{exp_return:.1f}%")
-        elif exp_return > 2:
-            score += 2
-            reasons.append(f"Moderate upside: +{exp_return:.1f}%")
-        elif exp_return > 0:
-            score += 1
-            reasons.append(f"Slight upside: +{exp_return:.1f}%")
-        elif exp_return > -2:
-            score -= 1
-            reasons.append(f"Slight downside risk: {exp_return:.1f}%")
-        else:
-            score -= 2
-            reasons.append(f"Downside risk: {exp_return:.1f}%")
-        
-        # 2. Trend alignment
+
+        # Run models for profitability and agreement
+        arima_result = self.run_arima_forecast(forecast_days)
+        monte_carlo_result = self.run_monte_carlo(forecast_days)
+        # Use the same ensemble logic as forecast_stock
+        ensemble_return = 0.4 * forecast['expected_return_pct']
+        arima_return = arima_result.get('expected_return_pct', forecast['expected_return_pct'])
+        mc_return = monte_carlo_result['expected_return_pct'] if monte_carlo_result else forecast['expected_return_pct']
+        ensemble_return += 0.3 * arima_return + 0.3 * mc_return
+
+        # Model agreement
+        returns_list = [forecast['expected_return_pct'], arima_return, mc_return]
+        pos_agree = sum(1 for r in returns_list if r > 0)
+        neg_agree = sum(1 for r in returns_list if r < 0)
+        model_agreement = 0
+        if pos_agree == 3 or neg_agree == 3:
+            model_agreement = 2
+        elif pos_agree == 2 or neg_agree == 2:
+            model_agreement = 1
+        elif pos_agree == 1 or neg_agree == 1:
+            model_agreement = -1
+
+        # Monte Carlo profit probability
+        profit_prob = monte_carlo_result['probability_of_profit'] if monte_carlo_result else 50
+
+        # Risk-adjusted return (Sharpe-like)
+        # Annualize the forecast return to match annualized volatility
+        volatility = forecast['annualized_volatility']
+        risk_adj = 0
+        if volatility > 0:
+            # Annualize return: ((1 + r/100)^(252/days) - 1) * 100
+            annualized_ensemble_return = ((1 + ensemble_return / 100) ** (252 / forecast_days) - 1) * 100
+            sharpe = annualized_ensemble_return / volatility
+            if sharpe > 0.5:
+                risk_adj = 2
+            elif sharpe > 0.2:
+                risk_adj = 1
+            elif sharpe > 0:
+                risk_adj = 0
+            else:
+                risk_adj = -1
+
+        # Technicals
+        tech_score = 0
         if trends['trend_direction'] == 'UPWARD':
-            score += 1
-            reasons.append("Price in upward trend")
+            tech_score += 1
         elif trends['trend_direction'] == 'DOWNWARD':
-            score -= 1
-            reasons.append("Price in downward trend")
-        
-        # 3. Moving average signals
-        if trends['above_ma20'] and trends['above_ma50']:
-            score += 1
-            reasons.append("Trading above key moving averages")
-        elif not trends['above_ma20'] and not trends['above_ma50']:
-            score -= 1
-            reasons.append("Trading below key moving averages")
-        
-        # 4. Momentum
+            tech_score -= 1
         if trends['momentum_10d'] > 3:
-            score += 1
-            reasons.append(f"Strong 10-day momentum: +{trends['momentum_10d']:.1f}%")
+            tech_score += 1
         elif trends['momentum_10d'] < -3:
-            score -= 1
-            reasons.append(f"Weak 10-day momentum: {trends['momentum_10d']:.1f}%")
-        
-        # 5. Seasonal factor
+            tech_score -= 1
+
+        # Seasonality
+        season_score = 0
         if seasonality:
             current_month_data = seasonality['monthly_returns'].get(seasonality['current_month'])
             if current_month_data:
                 if current_month_data['avg_return'] > 1:
-                    score += 1
-                    reasons.append(f"Historically strong month: {seasonality['current_month']}")
+                    season_score += 1
                 elif current_month_data['avg_return'] < -1:
-                    score -= 1
-                    reasons.append(f"Historically weak month: {seasonality['current_month']}")
-        
-        # Generate recommendation
-        if score >= 3:
+                    season_score -= 1
+
+        # Quant-style scoring
+        score = 0
+        reasons = []
+        # Ensemble expected return
+        if ensemble_return > 8:
+            score += 3
+            reasons.append(f"Ensemble return very strong: +{ensemble_return:.1f}%")
+        elif ensemble_return > 4:
+            score += 2
+            reasons.append(f"Ensemble return strong: +{ensemble_return:.1f}%")
+        elif ensemble_return > 0:
+            score += 1
+            reasons.append(f"Ensemble return positive: +{ensemble_return:.1f}%")
+        elif ensemble_return < -8:
+            score -= 3
+            reasons.append(f"Ensemble return very negative: {ensemble_return:.1f}%")
+        elif ensemble_return < -4:
+            score -= 2
+            reasons.append(f"Ensemble return negative: {ensemble_return:.1f}%")
+        elif ensemble_return < 0:
+            score -= 1
+            reasons.append(f"Ensemble return slightly negative: {ensemble_return:.1f}%")
+
+        # Model agreement
+        if model_agreement == 2:
+            score += 2
+            reasons.append("All models agree on direction")
+        elif model_agreement == 1:
+            score += 1
+            reasons.append("Most models agree on direction")
+        elif model_agreement == -1:
+            score -= 1
+            reasons.append("Models disagree on direction")
+
+        # Profit probability
+        if profit_prob > 70:
+            score += 2
+            reasons.append(f"High profit probability: {profit_prob:.0f}%")
+        elif profit_prob > 60:
+            score += 1
+            reasons.append(f"Good profit probability: {profit_prob:.0f}%")
+        elif profit_prob < 50:
+            score -= 1
+            reasons.append(f"Low profit probability: {profit_prob:.0f}%")
+
+        # Risk-adjusted return
+        score += risk_adj
+        if risk_adj == 2:
+            reasons.append("Excellent risk-adjusted return")
+        elif risk_adj == 1:
+            reasons.append("Good risk-adjusted return")
+        elif risk_adj == -1:
+            reasons.append("Negative risk-adjusted return")
+
+        # Technicals
+        score += tech_score
+        if tech_score > 0:
+            reasons.append("Technical trend/short-term momentum positive")
+        elif tech_score < 0:
+            reasons.append("Technical trend/short-term momentum negative")
+
+        # Seasonality
+        score += season_score
+        if season_score > 0:
+            reasons.append("Seasonality is favorable for this month")
+        elif season_score < 0:
+            reasons.append("Seasonality is unfavorable for this month")
+
+        # Recommendation mapping
+        if score >= 6:
             recommendation = "STRONG BUY"
             action = "Consider buying now for potential gains"
             color = "#22c55e"
-        elif score >= 1:
+        elif score >= 3:
             recommendation = "BUY"
             action = "Good entry point for long-term investors"
             color = "#4ade80"
-        elif score >= -1:
+        elif score >= 1:
             recommendation = "HOLD"
             action = "Wait for clearer signals before acting"
             color = "#fbbf24"
-        elif score >= -3:
+        elif score >= -2:
             recommendation = "SELL"
             action = "Consider reducing position"
             color = "#f97316"
@@ -307,16 +475,20 @@ class StockForecaster:
             recommendation = "STRONG SELL"
             action = "High risk - consider exiting position"
             color = "#ef4444"
-        
+
         return {
             'recommendation': recommendation,
             'action': action,
             'score': score,
             'color': color,
-            'reasons': reasons[:5],  # Top 5 reasons
+            'reasons': reasons[:7],  # Top 7 reasons
             'trends': trends,
             'forecast': forecast,
             'seasonality': seasonality,
+            'ensemble_return': ensemble_return,
+            'model_agreement': model_agreement,
+            'profit_probability': profit_prob,
+            'risk_adjusted': risk_adj,
         }
     
     def get_price_history_chart_data(self, days=365):
@@ -370,16 +542,17 @@ class StockForecaster:
             return None
         
         # Parameters from historical data
-        mu = self.returns.mean()  # Daily drift
-        sigma = self.returns.std()  # Daily volatility
+        # Use log returns for more accurate GBM
+        log_returns = np.log(self.prices / self.prices.shift(1)).dropna()
+        mu = log_returns.mean()  # Daily drift (log)
+        sigma = log_returns.std()  # Daily volatility (log)
         current_price = float(self.prices.iloc[-1])
         
-        # Simulate paths
-        np.random.seed(42)  # Reproducibility
+        # NO fixed seed - each call produces unique simulations
         dt = 1  # Daily steps
         
-        # Generate random walks
-        random_shocks = np.random.normal(0, 1, (n_simulations, days))
+        # Generate random walks with fresh randomness each time
+        random_shocks = np.random.standard_normal((n_simulations, days))
         
         # GBM formula: S(t+dt) = S(t) * exp((μ - σ²/2)*dt + σ*√dt*Z)
         daily_returns = (mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * random_shocks
@@ -412,7 +585,7 @@ class StockForecaster:
         expected_return = (mean_final / current_price - 1) * 100
         
         # Sample paths for visualization (5 representative paths)
-        sample_indices = [0, n_simulations//4, n_simulations//2, 3*n_simulations//4, n_simulations-1]
+        sample_indices = np.random.choice(n_simulations, min(5, n_simulations), replace=False)
         sample_paths = [price_paths[i, :].tolist() for i in sample_indices]
         
         return {
